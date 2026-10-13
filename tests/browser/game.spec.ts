@@ -132,9 +132,7 @@ test("jitter rewards, false-start reaction, precision hit/miss", async ({
   await page.locator(".game-card-precision").click();
   await page.getByRole("button", { name: "Comenzar desafío" }).click();
   for (let i = 0; i < 10; i++)
-    await page
-      .getByRole("button", { name: "Acertar objetivo" })
-      .dispatchEvent("pointerdown", { button: 0 });
+    await page.getByRole("button", { name: "Acertar objetivo" }).click();
   await page
     .getByRole("group", { name: "Área de precisión" })
     .dispatchEvent("pointerdown", { button: 0 });
@@ -151,13 +149,17 @@ test("two tabs cannot duplicate the daily bonus or reserve two races", async ({
   await open(page);
   const other = await context.newPage();
   await open(other);
+  // Capture both current controls before either command changes their labels.
+  // A re-resolving locator can otherwise wait for the next race and start it.
+  const bonusButtons = await Promise.all(
+    [page, other].map((p) =>
+      p.getByRole("button", { name: /Reclamar bonus/ }).elementHandle(),
+    ),
+  );
   await Promise.all([
-    page
-      .getByRole("button", { name: /Reclamar bonus/ })
-      .evaluate((b: HTMLButtonElement) => b.click()),
-    other
-      .getByRole("button", { name: /Reclamar bonus/ })
-      .evaluate((b: HTMLButtonElement) => b.click()),
+    ...bonusButtons.map((b) =>
+      b!.evaluate((el) => (el as HTMLButtonElement).click()),
+    ),
   ]);
   await expect.poll(async () => (await save(page)).balance).toBe(10000);
   expect(
@@ -167,13 +169,15 @@ test("two tabs cannot duplicate the daily bonus or reserve two races", async ({
   ).toHaveLength(1);
   await page.locator(".game-card-racing").click();
   await other.locator(".game-card-racing").click();
+  const raceButtons = await Promise.all(
+    [page, other].map((p) =>
+      p.getByRole("button", { name: "Acelerar" }).elementHandle(),
+    ),
+  );
   await Promise.all([
-    page
-      .getByRole("button", { name: "Acelerar" })
-      .evaluate((b: HTMLButtonElement) => b.click()),
-    other
-      .getByRole("button", { name: "Acelerar" })
-      .evaluate((b: HTMLButtonElement) => b.click()),
+    ...raceButtons.map((b) =>
+      b!.evaluate((el) => (el as HTMLButtonElement).click()),
+    ),
   ]);
   await expect.poll(async () => (await save(page)).balance).toBe(9900);
   expect(

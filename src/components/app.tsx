@@ -34,7 +34,21 @@ import { Blackjack } from "./games/blackjack";
 import { Racing } from "./games/racing";
 import { Roulette } from "./games/roulette";
 import { SkillGame } from "./games/skills";
-type View = "home" | "casino" | "skills" | "profile" | "settings" | Game;
+import { useAccount } from "./v2/account";
+import { Avatar, OriginalBadge } from "./v2/identity";
+import { ProfileEditor } from "./v2/profile-editor";
+import { AuthScreen } from "./v2/auth-screen";
+import { WelcomeReward } from "./v2/welcome";
+import { Rankings } from "./v2/rankings";
+type View =
+  | "rankings"
+  | "auth"
+  | "home"
+  | "casino"
+  | "skills"
+  | "profile"
+  | "settings"
+  | Game;
 const games: Game[] = [
   "blackjack",
   "racing",
@@ -319,6 +333,7 @@ function Lobby({ view, go }: { view: View; go: (v: View) => void }) {
   );
 }
 function Profile() {
+  const { member } = useAccount();
   const { state, act } = useGame();
   const [name, setName] = useState(state.name),
     [saved, setSaved] = useState(false);
@@ -335,11 +350,18 @@ function Profile() {
     <>
       <div className="profile-hero">
         <div className="profile-avatar">
-          <Crown size={42} />
+          {member ? (
+            <Avatar id={member.avatar} size={86} />
+          ) : (
+            <Crown size={42} />
+          )}
         </div>
         <div>
           <span className="eyebrow">MIEMBRO DEL CLUB / NIVEL {level}</span>
-          <h1>{state.name}</h1>
+          <div className="identity-name">
+            <h1>{state.name}</h1>
+            {member?.original && <OriginalBadge />}
+          </div>
           <p>
             {level < 5
               ? "Rookie del club"
@@ -359,33 +381,36 @@ function Profile() {
         </div>
       </div>
       <StatsStrip />
+      <ProfileEditor key={member?.id ?? "guest"} />
       <div className="profile-grid">
         <section className="panel">
-          <h3>Tu identidad</h3>
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const result = await act({ type: "profile", name });
-              if (result) setSaved(true);
-            }}
-          >
-            <label htmlFor="player-name">Nombre del jugador</label>
-            <div className="name-input">
-              <input
-                id="player-name"
-                value={name}
-                maxLength={24}
-                required
-                onChange={(e) => {
-                  setName(e.target.value);
-                  setSaved(false);
-                }}
-              />
-              <button className="button gold" type="submit">
-                {saved ? <Check size={17} /> : "Guardar"}
-              </button>
-            </div>
-          </form>
+          <h3>{member ? "Tus estadísticas" : "Tu identidad local"}</h3>
+          {!member && (
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const result = await act({ type: "profile", name });
+                if (result) setSaved(true);
+              }}
+            >
+              <label htmlFor="player-name">Nombre del jugador</label>
+              <div className="name-input">
+                <input
+                  id="player-name"
+                  value={name}
+                  maxLength={24}
+                  required
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    setSaved(false);
+                  }}
+                />
+                <button className="button gold" type="submit">
+                  {saved ? <Check size={17} /> : "Guardar"}
+                </button>
+              </div>
+            </form>
+          )}
           <div className="profile-numbers">
             <div>
               <b>{played}</b>
@@ -496,7 +521,7 @@ function Profile() {
   );
 }
 function SettingsPage({ onReset }: { onReset: () => void }) {
-  const { state, act, reset } = useGame();
+  const { state, act, reset, online } = useGame();
   const [confirm, setConfirm] = useState(false);
   return (
     <>
@@ -562,16 +587,26 @@ function SettingsPage({ onReset }: { onReset: () => void }) {
           <h3>
             <ShieldCheck size={19} /> Tu progreso
           </h3>
+          {online && (
+            <p>
+              Cuenta online: economía y récords administrados por el servidor.
+              El progreso oficial no se puede reiniciar aquí.
+            </p>
+          )}
           <p>
-            El guardado es automático y vive en este navegador. Saldo y récords
-            son locales y pueden modificarse desde las herramientas del
-            navegador. No hay cuentas ni sincronización entre dispositivos.
+            {online
+              ? "Tu cuenta se guarda en el servidor. Los resultados oficiales se validan antes de incorporarse al ranking."
+              : "El guardado local vive en este navegador. Saldo y récords locales pueden modificarse desde las herramientas del navegador y no se importan al ranking oficial."}
           </p>
           <p>
             Todas las monedas son ficticias. No hay depósitos, retiros, compras
             ni premios con valor económico.
           </p>
-          <button className="button danger" onClick={() => setConfirm(true)}>
+          <button
+            className="button danger"
+            disabled={online}
+            onClick={() => setConfirm(true)}
+          >
             Reiniciar progreso
           </button>
         </section>
@@ -642,6 +677,7 @@ function SettingsPage({ onReset }: { onReset: () => void }) {
   );
 }
 export function App() {
+  const { mode, member, error: accountError } = useAccount();
   const { state, ready, error, clearError } = useGame();
   const [view, setView] = useState<View>("home");
   const level = levelFor(state.xp);
@@ -658,6 +694,7 @@ export function App() {
     { view: "casino" as View, label: "Casino", icon: Spade },
     { view: "skills" as View, label: "Skill Games", icon: Zap },
     { view: "profile" as View, label: "Mi perfil", icon: UserRound },
+    { view: "rankings" as View, label: "Rankings", icon: Trophy },
   ];
   const inGame = games.includes(view as Game);
   return (
@@ -732,7 +769,7 @@ export function App() {
             <span>
               <ShieldCheck size={13} /> SOLO MONEDAS VIRTUALES
             </span>
-            <small>GAMBLING © 2026 · V1.0</small>
+            <small>GAMBLING © 2026 · V2.0</small>
           </div>
         </aside>
         <div className="app-main">
@@ -751,10 +788,24 @@ export function App() {
                         ? "Casino"
                         : view === "profile"
                           ? "Mi perfil"
-                          : "Ajustes"}
+                          : view === "rankings"
+                            ? "Rankings"
+                            : view === "auth"
+                              ? "Cuenta"
+                              : "Ajustes"}
               </b>
             </div>
             <div className="header-actions">
+              <button
+                className="account-entry"
+                aria-label={member ? member.username : "Cuenta"}
+                disabled={!!state.active}
+                onClick={() => go(member ? "profile" : "auth")}
+              >
+                <UserRound size={16} />
+                <span>{member ? member.username : "Cuenta"}</span>
+              </button>
+              {member?.original && <OriginalBadge />}
               <div className="wallet">
                 <span>SALDO DISPONIBLE</span>
                 <motion.strong
@@ -771,12 +822,35 @@ export function App() {
                 onClick={() => go("profile")}
                 aria-label="Abrir perfil"
               >
-                <span>{state.name.slice(0, 1).toUpperCase()}</span>
+                {member ? (
+                  <Avatar id={member.avatar} size={36} />
+                ) : (
+                  <span>{state.name.slice(0, 1).toUpperCase()}</span>
+                )}
                 <b>{level}</b>
               </button>
             </div>
           </header>
           <main>
+            <div className={`mode-banner mode-${mode}`}>
+              <span>
+                {mode === "demo"
+                  ? "DEMO · DESARROLLO · DATOS FICTICIOS"
+                  : mode === "online" && member
+                    ? "CUENTA ONLINE · PROGRESO EN EL SERVIDOR"
+                    : "MODO LOCAL · SIN RANKINGS OFICIALES"}
+              </span>
+              {!member && (
+                <button disabled={!!state.active} onClick={() => go("auth")}>
+                  Entrar al club <ArrowRight size={13} />
+                </button>
+              )}
+            </div>
+            {accountError && (
+              <p className="form-error" role="alert">
+                {accountError}
+              </p>
+            )}
             {error && (
               <div className="error-banner" role="alert">
                 <span>{error}</span>
@@ -832,10 +906,21 @@ export function App() {
                   <Roulette />
                 ) : ["jitter", "reaction", "precision"].includes(view) ? (
                   <SkillGame key={view} game={view as Skill} />
+                ) : view === "rankings" ? (
+                  <Rankings />
+                ) : view === "auth" ? (
+                  <AuthScreen onDone={() => go("home")} />
                 ) : view === "profile" ? (
-                  <Profile />
+                  <Profile key={member?.id ?? "local"} />
                 ) : (
                   <SettingsPage onReset={() => go("home")} />
+                )}
+                {inGame && !state.active && (
+                  <Rankings
+                    key={view + state.history[0]?.id}
+                    game={view as Game}
+                    compact
+                  />
                 )}
               </motion.div>
             </AnimatePresence>
@@ -843,7 +928,12 @@ export function App() {
               <span>
                 <ShieldCheck size={14} /> Gratis. Ficticio. Solo diversión.
               </span>
-              <span>Sin dinero real · Progreso guardado en este navegador</span>
+              <span>
+                Sin dinero real ·{" "}
+                {mode === "online" && member
+                  ? "Progreso sincronizado"
+                  : "Progreso en este navegador"}
+              </span>
               <b>
                 PLAY YOUR WAY. <span>G.</span>
               </b>
@@ -872,6 +962,7 @@ export function App() {
           </nav>
         </div>
       </div>
+      <WelcomeReward />
     </MotionConfig>
   );
 }

@@ -28,15 +28,22 @@ export type GameStats = {
   earned: number;
   lost: number;
   best: number;
+  bestNet?: number;
   medals: number[];
 };
 type BaseRound = { id: string; stake: number; startedAt: number };
 export type Round = BaseRound &
   (
-    | { game: "blackjack"; hand: Hand }
+    | { game: "blackjack"; hand: Hand; canSettle?: boolean }
     | { game: "racing"; selected: number; order: number[] }
     | { game: "roulette"; bets: RouletteBet[]; result: number }
-    | { game: Skill; medals: number[]; delay: number }
+    | {
+        game: Skill;
+        medals: number[];
+        delay: number;
+        prepared?: boolean;
+        targets?: { x: number; y: number }[];
+      }
   );
 export type Result = {
   id: string;
@@ -67,7 +74,7 @@ export type Save = {
   lost: number;
   xp: number;
   lastBonus: number | null;
-  settings: { sound: boolean; reducedMotion: boolean };
+  settings: { sound: boolean; reducedMotion: boolean; sensitivity?: number };
   stats: Record<Game, GameStats>;
   history: Result[];
   ledger: Movement[];
@@ -122,7 +129,14 @@ export type Action =
   | { type: "roulette"; bets: RouletteBet[] }
   | { type: "settle"; id: string }
   | { type: "skill"; game: Skill }
-  | { type: "skill-end"; id: string; score: number; falseStart?: boolean }
+  | { type: "skill-first"; id: string }
+  | {
+      type: "skill-end";
+      id: string;
+      score: number;
+      falseStart?: boolean;
+      proof?: import("./v2/skill-proof").SkillProof;
+    }
   | { type: "abandon"; id: string };
 export const bonusRemaining = (s: Save, now: number) =>
   s.lastBonus === null ? 0 : Math.max(0, s.lastBonus + DAY - now);
@@ -169,6 +183,7 @@ function finish(
   stat.earned = cents(stat.earned + earned);
   stat.lost = cents(stat.lost + lost);
   stat.played++;
+  stat.bestNet = Math.max(stat.bestNet ?? 0, net);
   if (net > 0) stat.wins++;
   else if (net < 0 || (round.stake === 0 && returned === 0)) stat.losses++;
   else stat.ties++;
@@ -235,6 +250,13 @@ export function transition(
     if (!name) throw new Error("Escribe un nombre.");
     s.name = name;
   } else if (action.type === "settings") {
+    if (
+      action.settings.sensitivity !== undefined &&
+      (!Number.isFinite(action.settings.sensitivity) ||
+        action.settings.sensitivity < 0.25 ||
+        action.settings.sensitivity > 3)
+    )
+      throw new Error("La sensibilidad debe estar entre 0,25 y 3.");
     s.settings = { ...s.settings, ...action.settings };
   } else if (action.type === "blackjack") {
     reserve(s, action.stake, now, id);
@@ -285,12 +307,20 @@ export function transition(
       startedAt: now,
       medals: [...s.stats[action.game].medals],
       delay: action.game === "reaction" ? 1800 + randomInt(3001) : 0,
+      prepared: action.game !== "reaction",
     };
   } else {
     // Repeated completion callbacks and commands from stale tabs are harmless.
     if (!s.active || action.id !== s.active.id) return previous;
     const r = s.active;
-    if (action.type === "hit" || action.type === "stand") {
+    if (action.type === "skill-first") {
+      if (!("prepared" in r) || r.game === "reaction")
+        throw new Error("Esta partida no necesita preparación.");
+      if (r.prepared) {
+        r.startedAt = now;
+        r.prepared = false;
+      }
+    } else if (action.type === "hit" || action.type === "stand") {
       if (r.game !== "blackjack") throw new Error("Partida incompatible.");
       if (natural(r.hand.player) || natural(r.hand.dealer)) {
         finishBlackjack(s, now);
@@ -334,6 +364,8 @@ export function transition(
       if (!["jitter", "reaction", "precision"].includes(r.game))
         throw new Error("Partida incompatible.");
       const game = r.game as Skill;
+      if ("prepared" in r && r.prepared)
+        throw new Error("Haz clic para comenzar.");
       if (!Number.isFinite(action.score) || action.score < 0)
         throw new Error("Resultado inválido.");
       if (
@@ -388,7 +420,11 @@ export function parseSave(raw: string): Save {
     (s.lastBonus !== null && !positive(s.lastBonus)) ||
     !s.settings ||
     typeof s.settings.sound !== "boolean" ||
-    typeof s.settings.reducedMotion !== "boolean"
+    typeof s.settings.reducedMotion !== "boolean" ||
+    (s.settings.sensitivity !== undefined &&
+      (!Number.isFinite(s.settings.sensitivity) ||
+        s.settings.sensitivity < 0.25 ||
+        s.settings.sensitivity > 3))
   )
     throw new Error("Guardado incompatible o dañado.");
   if (
@@ -397,6 +433,7 @@ export function parseSave(raw: string): Save {
       const v = s.stats[g];
       return (
         !v ||
+        (v.bestNet !== undefined && !positive(v.bestNet)) ||
         !["played", "wins", "losses", "ties", "earned", "lost", "best"].every(
           (k) => positive(v[k as keyof GameStats]),
         ) ||

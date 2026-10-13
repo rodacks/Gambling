@@ -183,7 +183,7 @@ export function playTone(frequency = 500) {
   }
 }
 export function History({ game, limit = 6 }: { game?: Game; limit?: number }) {
-  const { state } = useGame();
+  const { state, online } = useGame();
   const rows = state.history
     .filter((h) => !game || h.game === game)
     .slice(0, limit);
@@ -191,7 +191,7 @@ export function History({ game, limit = 6 }: { game?: Game; limit?: number }) {
     <div className="history">
       <div className="section-title">
         <h3>{game ? "Últimas partidas" : "Tu última jugada"}</h3>
-        <span>HISTORIAL LOCAL</span>
+        <span>{online ? "HISTORIAL ONLINE" : "HISTORIAL LOCAL"}</span>
       </div>
       {!rows.length ? (
         <div className="empty-history">

@@ -171,13 +171,9 @@ describe("Skills and progression", () => {
   it("allows free play with zero balance and refuses early rewards", () => {
     const initial = freshSave();
     initial.balance = 0;
-    const s = transition(
-      initial,
-      { type: "skill", game: "jitter" },
-      0,
-      "skill",
-    );
+    let s = transition(initial, { type: "skill", game: "jitter" }, 0, "skill");
     expect(s.balance).toBe(0);
+    s = transition(s, { type: "skill-first", id: "skill" }, 0);
     expect(() =>
       transition(s, { type: "skill-end", id: "skill", score: 65 }, 9999),
     ).toThrow();

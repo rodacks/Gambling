@@ -21,7 +21,10 @@ export function Blackjack() {
   const latest = state.history.find((h) => h.game === "blackjack");
   const hand = round?.hand ?? latest?.blackjackHand;
   const isNatural =
-    round && (natural(round.hand.player) || natural(round.hand.dealer));
+    round &&
+    (round.canSettle ||
+      natural(round.hand.player) ||
+      natural(round.hand.dealer));
   useEffect(() => {
     if (!round || !isNatural) return;
     const timer = setTimeout(
